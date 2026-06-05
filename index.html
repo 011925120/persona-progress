@@ -5,7 +5,6 @@
 <title>PERSONA STATUS</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
-/* ===== P5 基础风格 ===== */
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&display=swap');
 * { margin:0; padding:0; box-sizing:border-box; }
 body {
@@ -14,7 +13,6 @@ body {
   padding:20px 10px 40px;
   background-image:linear-gradient(135deg,rgba(180,0,30,.15) 25%,transparent 25%,transparent 50%,rgba(180,0,30,.15) 50%,rgba(180,0,30,.15) 75%,transparent 75%);
   background-size:40px 40px;
-  overflow:hidden; /* 防止弹窗溢出 */
 }
 h1 { font-size:26px; letter-spacing:6px; color:#e60026; text-shadow:0 0 20px #ff204060; margin-bottom:4px; }
 .sub { font-size:12px; color:#aa6677; margin-bottom:18px; }
@@ -22,7 +20,6 @@ h1 { font-size:26px; letter-spacing:6px; color:#e60026; text-shadow:0 0 20px #ff
 .log-area textarea { width:100%; height:60px; resize:none; background:transparent; border:none; outline:none; color:#ffe0e0; font-size:15px; }
 .log-area button { margin-top:8px; width:100%; padding:8px; background:#c4001a; color:#fff; border:none; border-radius:4px; font-size:15px; font-weight:700; cursor:pointer; letter-spacing:3px; }
 .log-area button:hover { background:#ff2244; }
-
 .main { display:flex; flex-wrap:wrap; gap:24px; justify-content:center; }
 .chart-box { background:#140508; border:2px solid #c4001a88; border-radius:8px; padding:16px; }
 canvas { max-width:320px; max-height:320px; }
@@ -37,16 +34,190 @@ canvas { max-width:320px; max-height:320px; }
 .day.today { outline:1px solid #e60026; }
 .day.has-log { background:#c4001a33; color:#ff8899; font-weight:700; }
 .day.empty { pointer-events:none; }
-
-.modal { position:fixed; inset:0; background:#000b; display:none; justify-content:center; align-items:center; z-index:10; }
+.modal { position:fixed; inset:0; background:#000b; display:none; justify-content:center; align-items:center; }
 .modal.show { display:flex; }
 .modal-inner { background:#1e080c; border:2px solid #c4001a; border-radius:8px; padding:20px; max-width:400px; width:90%; }
 .modal-inner h3 { color:#e60026; margin-bottom:10px; }
 .modal-inner pre { white-space:pre-wrap; color:#ffccdd; line-height:1.6; }
+.hint { color:#aa6677; font-size:12px; margin-top:8px; text-align:center; }
 
-/* ===== 新增：P5 属性增长弹窗 ===== */
-.feedback-popup {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%) scale(0.5
+/* ===== P5 属性增长弹窗 ===== */
+.popup-stat {
+  position:fixed; inset:0; display:flex; justify-content:center; align-items:center;
+  pointer-events:none; z-index:999;
+  animation: popIn .25s ease, fadeOut .6s ease 1s forwards;
+}
+.popup-stat span {
+  font-size:42px; font-weight:900; letter-spacing:8px;
+  color:#ff2a4a; text-shadow:0 0 20px #ff2a4a88, 2px 2px 0 #000;
+  font-family:'Noto Sans JP',sans-serif;
+}
+@keyframes popIn { from { transform:scale(.6); opacity:0; } to { transform:scale(1); opacity:1; } }
+@keyframes fadeOut { to { opacity:0; } }
+</style>
+</head>
+<body>
+
+<h1>ペルソナ・ステータス</h1>
+<p class="sub">CLICK CALENDAR TO VIEW DAILY GROWTH</p>
+
+<div class="log-area">
+  <textarea id="input" placeholder="今日何をした？"></textarea>
+  <button onclick="submit()">記録する / SAVE</button>
+</div>
+
+<div class="main">
+  <div class="chart-box">
+    <canvas id="radar"></canvas>
+    <div class="hint" id="hint">当前显示：累计总属性</div>
+  </div>
+  <div class="calendar">
+    <div class="cal-head">
+      <button onclick="chMonth(-1)">◀</button>
+      <span id="title"></span>
+      <button onclick="chMonth(1)">▶</button>
+    </div>
+    <div class="cal-grid" id="grid"></div>
+  </div>
+</div>
+
+<div class="modal" id="modal" onclick="closeModal()">
+  <div class="modal-inner" onclick="event.stopPropagation()">
+    <h3 id="mdate"></h3>
+    <pre id="mbody"></pre>
+  </div>
+</div>
+
+<script>
+const DIMS = ["勇气","灵巧","体贴","知识","魅力"];
+const TOTAL_KEY = "p5_total";
+const DAILY_KEY = "p5_daily";
+const LOG_KEY = "p5_logs";
+let y, m;
+
+/* ===== 初始化 ===== */
+if(!localStorage.getItem(TOTAL_KEY)) localStorage.setItem(TOTAL_KEY, JSON.stringify([0,0,0,0,0]));
+if(!localStorage.getItem(DAILY_KEY)) localStorage.setItem(DAILY_KEY, JSON.stringify({}));
+
+/* ===== 雷达图 ===== */
+const chart = new Chart(document.getElementById("radar"), {
+  type:"radar",
+  data:{
+    labels:DIMS,
+    datasets:[{
+      label:"累计属性",
+      data:JSON.parse(localStorage.getItem(TOTAL_KEY)),
+      backgroundColor:"rgba(230,0,38,.25)",
+      borderColor:"#e60026",
+      borderWidth:2,
+      pointBackgroundColor:"#ff4466"
+    },{
+      label:"当日增长",
+      data:[0,0,0,0,0],
+      backgroundColor:"rgba(255,215,0,.3)",
+      borderColor:"#ffd700",
+      borderWidth:2,
+      pointBackgroundColor:"#fff"
+    }]
+  },
+  options:{
+    scales:{
+      r:{min:0,max:30,ticks:{display:false},grid:{color:"rgba(230,0,38,.3)"},pointLabels:{color:"#ffaabb"}}
+    },
+    plugins:{legend:{display:false}}
+  }
+});
+
+/* ===== 日历 ===== */
+function fmt(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function chMonth(i){ m+=i; if(m>11){m=0;y++;} if(m<0){m=11;y--;} drawCal(); }
+function drawCal(){
+  const logs=JSON.parse(localStorage.getItem(LOG_KEY)||"{}");
+  const daily=JSON.parse(localStorage.getItem(DAILY_KEY)||"{}");
+  const first=new Date(y,m,1).getDay();
+  const days=new Date(y,m+1,0).getDate();
+  document.getElementById("title").textContent=y+" / "+String(m+1).padStart(2,'0');
+  let h=DIMS.slice(0,7).map((_,i)=>"日,月,火,水,木,金,土".split(",")[i]).map(x=>`<div class="dow">${x}</div>`).join("");
+  for(let i=0;i<first;i++) h+=`<div class="day empty"></div>`;
+  for(let d=1;d<=days;d++){
+    const k=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const c=["day"];
+    if(k===fmt(new Date())) c.push("today");
+    if(daily[k]) c.push("has-log");
+    h+=`<div class="${c.join(" ")}" onclick="showDay('${k}')">${d}</div>`;
+  }
+  document.getElementById("grid").innerHTML=h;
+}
+y=new Date().getFullYear(); m=new Date().getMonth(); drawCal();
+
+/* ===== 点击日历 ===== */
+function showDay(key){
+  const daily=JSON.parse(localStorage.getItem(DAILY_KEY)||"{}");
+  const logs=JSON.parse(localStorage.getItem(LOG_KEY)||"{}");
+  chart.data.datasets[1].data=daily[key]||[0,0,0,0,0];
+  chart.update();
+  document.getElementById("hint").innerText="当前显示："+key+" 的增长";
+  document.getElementById("mdate").textContent="📅 "+key;
+  document.getElementById("mbody").textContent=logs[key]||"（无记录）";
+  document.getElementById("modal").classList.add("show");
+}
+function closeModal(){
+  document.getElementById("modal").classList.remove("show");
+  chart.data.datasets[1].data=[0,0,0,0,0];
+  chart.update();
+  document.getElementById("hint").innerText="当前显示：累计总属性";
+}
+
+/* ===== 提交 ===== */
+async function submit(){
+  const txt=document.getElementById("input").value.trim();
+  if(!txt) return;
+  const today=fmt(new Date());
+  const total=JSON.parse(localStorage.getItem(TOTAL_KEY));
+  const daily=JSON.parse(localStorage.getItem(DAILY_KEY));
+  const logs=JSON.parse(localStorage.getItem(LOG_KEY)||"{}");
+
+  logs[today]=(logs[today]?logs[today]+"\n---\n":"")+txt;
+  localStorage.setItem(LOG_KEY, JSON.stringify(logs));
+
+  // 调用 DeepSeek
+  const res=await fetch("https://api.deepseek.com/v1/chat/completions", {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":"Bearer sk-1bb09dc09d064c08ab5d2e4e7572ab67"
+    },
+    body:JSON.stringify({
+      model:"deepseek-chat",
+      messages:[{
+        role:"user",
+        content:`用户今天做了：${txt}\n请从[勇气,灵巧,体贴,知识,魅力]中选唯一一项提升1-3分，返回严格JSON数组，如[0,2,0,0,0]。`
+      }]
+    })
+  });
+
+  const j=await res.json();
+  const add=JSON.parse(j.choices[0].message.content);
+  for(let i=0;i<5;i++) total[i]+=add[i];
+  daily[today]=add;
+
+  localStorage.setItem(TOTAL_KEY, JSON.stringify(total));
+  localStorage.setItem(DAILY_KEY, JSON.stringify(daily));
+
+  // 弹窗反馈
+  let incLabel="", incVal=0;
+  for(let i=0;i<5;i++) if(add[i]>0){ incLabel=DIMS[i]; incVal=add[i]; break; }
+  const pop=document.createElement("div");
+  pop.className="popup-stat";
+  pop.innerHTML=`<span>${incLabel} ＋${incVal}</span>`;
+  document.body.appendChild(pop);
+  setTimeout(()=>pop.remove(), 1200);
+
+  chart.data.datasets[0].data=total;
+  chart.update();
+  drawCal();
+  document.getElementById("input").value="";
+}
+</script>
+</body>
+</html>
