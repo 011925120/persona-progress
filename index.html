@@ -185,7 +185,7 @@ async function submit(){
     method:"POST",
     headers:{
       "Content-Type":"application/json",
-      "Authorization":"Bearer sk-1bb09dc09d064c08ab5d2e4e7572ab67"
+      "Authorization":"Bearer sk-1bb09dc09d064c08ab5d2e4e7572ab67" // ⚠️ 记得换成你自己的 Key
     },
     body:JSON.stringify({
       model:"deepseek-chat",
@@ -197,7 +197,18 @@ async function submit(){
   });
 
   const j=await res.json();
-  const add=JSON.parse(j.choices[0].message.content);
+  let raw=j.choices?.[0]?.message?.content || "[0,0,0,0,0]";
+  raw=raw.replace(/```json|```/g,"").trim(); // 清洗 Markdown
+
+  let add;
+  try {
+    add=JSON.parse(raw);
+  } catch(e){
+    console.error("AI返回解析失败:", raw);
+    add=[0,0,0,0,0]; // 兜底，防止崩溃
+  }
+
+  // 更新数据
   for(let i=0;i<5;i++) total[i]+=add[i];
   daily[today]=add;
 
@@ -213,6 +224,7 @@ async function submit(){
   document.body.appendChild(pop);
   setTimeout(()=>pop.remove(), 1200);
 
+  // 刷新视图
   chart.data.datasets[0].data=total;
   chart.update();
   drawCal();
